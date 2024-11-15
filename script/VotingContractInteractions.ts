@@ -2,13 +2,19 @@ const hre = require("hardhat");
 
 async function main() {
   try {
-    console.log("###### Deploying Voting Contract ######");
+    console.log(" ##### Deploying Voting Contract ###### ");
 
     const [owner, voterA, voterB, voterC] = await hre.ethers.getSigners();
 
-    const Voting = await hre.ethers.getContractFactory("Voting in progress");
+    const VotingLib = await hre.ethers.getContractFactory("VotingLib");
+    const votingLib = await VotingLib.deploy();
+    const votingLibAddress = await votingLib.getAddress();
+    const Voting = await hre.ethers.getContractFactory("Voting", {
+      libraries: {
+        VotingLib: votingLibAddress,
+      },
+    });
     const voting = await Voting.deploy();
-    await voting.waitForDeployment();
     const votingAddress = await voting.getAddress();
 
     console.log(`Voting Contract deployed to: ${votingAddress}`);
@@ -17,7 +23,7 @@ async function main() {
     console.log("\nAdding candidates...");
     await voting.addCandidate(1);
     await voting.addCandidate(2);
-    console.log("Added candidates with IDs: 1, 2");
+    console.log("Added candidates with IDs: A, B");
 
     console.log("\nStarting voting session...");
     await voting.startVoting();
@@ -26,27 +32,27 @@ async function main() {
     console.log("\nCasting votes...");
     const vote1 = await voting.connect(voterA).vote(1);
     await vote1.wait();
-    console.log(`Voter1 (${voterA.address}) voted for candidate 1`);
+    console.log(`VoterA (${voterA.address}) voted for candidate A`);
 
     const vote2 = await voting.connect(voterB).vote(2);
     await vote2.wait();
-    console.log(`Voter2 (${voterB.address}) voted for candidate 2`);
+    console.log(`VoterB (${voterB.address}) voted for candidate B`);
 
     const vote3 = await voting.connect(voterC).vote(1);
     await vote3.wait();
-    console.log(`Voter3 (${voterC.address}) voted for candidate 1`);
+    console.log(`VoterC (${voterC.address}) voted for candidate A`);
 
     console.log("\nRetrieving winner...");
     const [winnerId, winningVotes] = await voting.getWinner();
     console.log(`Winning Candidate ID: ${winnerId}`);
     console.log(`Winning Vote Count: ${winningVotes}`);
 
-    const votes1 = await voting.getVotesForCandidate(1);
-    const votes2 = await voting.getVotesForCandidate(2);
+    const votesA = await voting.getVotesForCandidate(1);
+    const votesB = await voting.getVotesForCandidate(2);
 
     console.log("\nFinal Vote Counts:");
-    console.log(`Candidate 1: ${votes1} votes`);
-    console.log(`Candidate 2: ${votes2} votes`);
+    console.log(`Candidate A: ${votesA} votes`);
+    console.log(`Candidate B: ${votesB} votes`);
   } catch (error) {
     console.error("Error:", error);
     process.exit(1);
