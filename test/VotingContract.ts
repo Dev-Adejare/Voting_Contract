@@ -1,106 +1,130 @@
-// test/Token.test.js
-const { ethers } = require("hardhat");
+const hre = require("hardhat");
+const {
+  loadFixture,
+} = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const { expect } = require("chai");
 
-describe("CustomToken", function () {
-  let token: { admin: () => any; addMinter: (arg0: any) => any; authorizedMinters: (arg0: any) => any; connect: (arg0: any) => { (): any; new(): any; addMinter: { (arg0: any): any; new(): any; }; removeMinter: { (arg0: any): any; new(): any; }; mint: { (arg0: any, arg1: any): any; new(): any; }; transfer: { (arg0: any, arg1: any): any; new(): any; }; approve: { (arg0: any, arg1: any): any; new(): any; }; transferFrom: { (arg0: any, arg1: any, arg2: any): any; new(): any; }; }; removeMinter: (arg0: any) => any; balanceOf: (arg0: any) => any; totalSupply: () => any; allowance: (arg0: any, arg1: any) => any; };
-  let owner: { address: any; };
-  let minter: { address: any; };
-  let user1: { address: any; };
-  let user2: { address: any; };
-  const initialSupply = ethers.parseUnits("1000", 18);
+describe("Voting Contract", function () {
+  async function VotingConract() {
+    const [owner, voter1, voter2, voter3] = await hre.ethers.getSigners();
 
-  beforeEach(async function () {
-    [owner, minter, user1, user2] = await ethers.getSigners();
-
-    const Token = await ethers.getContractFactory("ERC20Token");
-    token = await Token.deploy("Starknet Token", "STK", 18);
-  });
-
-  describe("Access Control Tests", function () {
-    it("should set the deployer as admin", async function () {
-      expect(await token.admin()).to.equal(owner.address);
+    const VotingLib = await hre.ethers.getContractFactory("VotingLib");
+    const votingLib = await VotingLib.deploy();
+    const votingLibAddress = await votingLib.getAddress();
+    const Voting = await hre.ethers.getContractFactory("Voting", {
+      libraries: {
+        VotingLib: votingLibAddress,
+      },
     });
+    const voting = await Voting.deploy();
+    await voting.getAddress();
+    return { voting, owner, voter1, voter2, voter3 };
+  }
 
-    it("should allow admin to add minter", async function () {
-      await token.addMinter(minter.address);
-      expect(await token.authorizedMinters(minter.address)).to.be.true;
-    });
-
-    it("should prevent non-admin from adding minter", async function () {
-      await expect(
-        token.connect(user1).addMinter(minter.address)
-      ).to.be.revertedWith("Admin alone can call this function");
-    });
-
-    it("should allow admin to remove minter", async function () {
-      await token.addMinter(minter.address);
-      await token.removeMinter(minter.address);
-      expect(await token.authorizedMinters(minter.address)).to.be.false;
-    });
-
-    it("should prevent non-admin from removing minter", async function () {
-      await token.addMinter(minter.address);
-      await expect(
-        token.connect(user1).removeMinter(minter.address)
-      ).to.be.revertedWith("Admin alone can call this function");
-    });
-  });
-
-  describe("Minting Tests", function () {
+  describe("Voting Process Tests", function () {
     beforeEach(async function () {
-      await token.addMinter(minter.address);
+      const { voting } = await loadFixture(VotingConract);
+      // Add candidates and start voting
+      await voting.addCandidate(1);
+      await voting.addCandidate(2);
+      // await voting.startVoting();
     });
 
-    it("should allow minter to mint tokens", async function () {
-      await token.connect(minter).mint(user1.address, initialSupply);
-      expect(await token.balanceOf(user1.address)).to.equal(initialSupply);
+    it("should correctly add candidates", async function () {
+      const { voting } = await loadFixture(VotingConract);
+      expect(await voting.isCandidateExists(1)).to.be.true;
+      expect(await voting.isCandidateExists(2)).to.be.true;
+      expect(await voting.isCandidateExists(3)).to.be.false;
     });
 
-    it("should prevent non-minter from minting tokens", async function () {
-      await expect(
-        token.connect(user1).mint(user2.address, initialSupply)
-      ).to.be.revertedWith("Minters alone can initiate this function");
+    it("should allow voters to cast votes", async function () {
+      const { voting, voter1 } = await loadFixture(VotingConract);
+      await voting.connect(voter1).vote(1);
+      expect(await voting.hasVoted(voter1.address)).to.be.true;
+      expect(await voting.getVotesForCandidate(1)).to.equal(1);
     });
 
-    it("should update total supply after minting", async function () {
-      await token.connect(minter).mint(user1.address, initialSupply);
-      expect(await token.totalSupply()).to.equal(initialSupply);
-    });
-  });
-
-  describe("Regular User Functions Tests", function () {
-    beforeEach(async function () {
-      await token.addMinter(minter.address);
-      await token.connect(minter).mint(user1.address, initialSupply);
-    });
-
-    it("should allow users to check balances", async function () {
-      const balance = await token.balanceOf(user1.address);
-      expect(balance).to.equal(initialSupply);
-    });
-
-    it("should allow users to transfer tokens", async function () {
-      const transferAmount = ethers.parseUnits("100", 18);
-      await token.connect(user1).transfer(user2.address, transferAmount);
-      expect(await token.balanceOf(user2.address)).to.equal(transferAmount);
-    });
-
-    it("should allow users to approve spending", async function () {
-      const approvalAmount = ethers.parseUnits("100", 18);
-      await token.connect(user1).approve(user2.address, approvalAmount);
-      expect(await token.allowance(user1.address, user2.address)).to.equal(
-        approvalAmount
+    it("should prevent double voting", async function () {
+      const { voting, voter1 } = await loadFixture(VotingConract);
+      await voting.connect(voter1).vote(1);
+      await expect(voting.connect(voter1).vote(1)).to.be.revertedWith(
+        "Voter has already voted"
       );
     });
 
-    it("should allow transferFrom with proper approval", async function () {
-      const transferAmount = ethers.parseUnits("100", 18);
-      await token.connect(user1).approve(user2.address, transferAmount);
-      await token
-        .connect(user2)
-        .transferFrom(user1.address, user2.address, transferAmount);
-      expect(await token.balanceOf(user2.address)).to.equal(transferAmount);
+    it("should prevent voting for non-existent candidate", async function () {
+      const { voting, voter1 } = await loadFixture(VotingConract);
+      await expect(voting.connect(voter1).vote(99)).to.be.revertedWith(
+        "Invalid candidate"
+      );
+    });
+
+    it("should correctly tally votes and determine winner", async function () {
+      const { voting, voter1, voter2, voter3 } = await loadFixture(
+        VotingConract
+      );
+      // Cast votes
+      await voting.connect(voter1).vote(1);
+      await voting.connect(voter2).vote(2);
+      await voting.connect(voter3).vote(1);
+
+      // Check individual vote counts
+      expect(await voting.getVotesForCandidate(1)).to.equal(2);
+      expect(await voting.getVotesForCandidate(2)).to.equal(1);
+
+      // Check winner
+      const [winnerId, winningVotes] = await voting.getWinner();
+      expect(winnerId).to.equal(1);
+      expect(winningVotes).to.equal(2);
+    });
+
+    it("should handle ties by selecting the first candidate", async function () {
+      const { voting, voter1, voter2, voter3 } = await loadFixture(
+        VotingConract
+      );
+      await voting.connect(voter1).vote(1);
+      await voting.connect(voter2).vote(2);
+
+      const [winnerId, winningVotes] = await voting.getWinner();
+      expect(winningVotes).to.equal(1);
+    });
+  });
+
+  describe("Voting Status Tests", function () {
+    beforeEach(async function () {
+      const { voting, voter1, voter2, voter3 } = await loadFixture(
+        VotingConract
+      );
+      await voting.addCandidate(1);
+    });
+
+    it("should prevent voting when voting is not open", async function () {
+      const { voting, voter1, voter2, voter3 } = await loadFixture(
+        VotingConract
+      );
+      await expect(voting.connect(voter1).vote(1)).to.be.revertedWith(
+        "Voting is not open"
+      );
+    });
+
+    it("should allow voting after voting is opened", async function () {
+      const { voting, voter1, voter2, voter3 } = await loadFixture(
+        VotingConract
+      );
+      await voting.startVoting();
+      await voting.connect(voter1).vote(1);
+      expect(await voting.hasVoted(voter1.address)).to.be.true;
+    });
+
+    it("should prevent voting after voting is closed", async function () {
+      const { voting, voter1, voter2, voter3 } = await loadFixture(
+        VotingConract
+      );
+      await voting.startVoting();
+      await voting.endVoting();
+      await expect(voting.connect(voter1).vote(1)).to.be.revertedWith(
+        "Voting is not open"
+      );
     });
   });
 });
